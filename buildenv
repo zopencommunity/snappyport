@@ -28,7 +28,15 @@ export ZOPEN_DONT_ADD_ZOSLIB_DEP=1
 export ZOPEN_COMP="CLANG"
 
 export ZOPEN_CONFIGURE="cmake"
-export ZOPEN_CONFIGURE_OPTS="-DCMAKE_BUILD_TYPE=Release -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF -B ../build --install-prefix \"\$ZOPEN_INSTALL_DIR/\" ."
+# CMAKE_CXX_COMPILER has to be named. Left to itself CMake finds /bin/c++,
+# the legacy driver, which rejects the .cxx suffix CMake writes its compiler
+# probe with:
+#
+#   FSUM3010 Specify a file with the correct suffix (.C, .hh, .i, .c, ...)
+#
+# and the configure fails inside CMakeTestCXXCompiler rather than anywhere that
+# names snappy. A C-only port never sees this because /bin/cc accepts .c.
+export ZOPEN_CONFIGURE_OPTS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=\"\${CC}\" -DCMAKE_CXX_COMPILER=\"\${CXX}\" -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF -B ../build --install-prefix \"\$ZOPEN_INSTALL_DIR/\" ."
 export ZOPEN_MAKE="cmake"
 export ZOPEN_MAKE_OPTS="--build ../build --parallel \$ZOPEN_NUM_JOBS --config Release"
 export ZOPEN_MAKE_MINIMAL=Y
