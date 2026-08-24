@@ -27,16 +27,36 @@ export ZOPEN_DEV_DEPS="${ZOPEN_STABLE_DEPS}"
 export ZOPEN_DONT_ADD_ZOSLIB_DEP=1
 export ZOPEN_COMP="CLANG"
 
-export ZOPEN_CONFIGURE="cmake"
-# CMAKE_CXX_COMPILER has to be named. Left to itself CMake finds /bin/c++,
-# the legacy driver, which rejects the .cxx suffix CMake writes its compiler
-# probe with:
+# Name the compiler explicitly.
+#
+# CMake otherwise finds /bin/cc and /bin/c++, the legacy drivers, and two
+# things go wrong: /bin/c++ rejects the .cxx suffix CMake writes its own
+# compiler probe with --
 #
 #   FSUM3010 Specify a file with the correct suffix (.C, .hh, .i, .c, ...)
 #
-# and the configure fails inside CMakeTestCXXCompiler rather than anywhere that
-# names snappy. A C-only port never sees this because /bin/cc accepts .c.
-export ZOPEN_CONFIGURE_OPTS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=\"\${CC}\" -DCMAKE_CXX_COMPILER=\"\${CXX}\" -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF -B ../build --install-prefix \"\$ZOPEN_INSTALL_DIR/\" ."
+# -- and /bin/cc rejects the clang flags the build carries:
+#
+#   FSUM3007 -t is not a valid option.
+#
+# Neither error names the compiler choice, so both read as a broken port. CC
+# and CXX are not exported into a CMake port's environment here, so resolving
+# the path is left to the port. The glob keeps this working across compiler
+# levels; an explicit CC in the environment still wins.
+if [ -z "${CC}" ] || [ ! -x "${CC}" ]; then
+  ZOPEN_CLANG=$(ls -1 /usr/lpp/IBM/oelcpp/*/bin/clang 2> /dev/null | tail -1)
+else
+  ZOPEN_CLANG="${CC}"
+fi
+if [ -z "${ZOPEN_CLANG}" ] || [ ! -x "${ZOPEN_CLANG}" ]; then
+  echo "Could not find a clang to build with; set CC" >&2
+  return 4
+fi
+ZOPEN_CLANGXX="${ZOPEN_CLANG}++"
+[ -x "${ZOPEN_CLANGXX}" ] || ZOPEN_CLANGXX="${ZOPEN_CLANG}"
+
+export ZOPEN_CONFIGURE="cmake"
+export ZOPEN_CONFIGURE_OPTS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${ZOPEN_CLANG} -DCMAKE_CXX_COMPILER=${ZOPEN_CLANGXX} -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF -B ../build --install-prefix \"$ZOPEN_INSTALL_DIR/\" ."
 export ZOPEN_MAKE="cmake"
 export ZOPEN_MAKE_OPTS="--build ../build --parallel \$ZOPEN_NUM_JOBS --config Release"
 export ZOPEN_MAKE_MINIMAL=Y
