@@ -1,0 +1,114 @@
+# bump: snappy-version /SNAPPY_VERSION="(.*)"/ https://github.com/google/snappy.git|semver:*
+SNAPPY_VERSION="1.2.2"
+
+###
+### snappy is Google's compression library: it does not aim for the best
+### ratio, it aims to be very fast, which is why it is the default codec in
+### Parquet, Cassandra and a lot of columnar storage. Arrow uses it as one of
+### its compression options.
+###
+### It builds clean here -- no patches. The only thing worth knowing is that
+### the two test/benchmark options default to ON upstream and pull in googletest
+### and google/benchmark, neither of which is ported; both are turned off below.
+###
+
+export ZOPEN_PROJECT_NAME="snappy"
+export ZOPEN_BUILD_LINE="STABLE"
+export ZOPEN_CATEGORIES="compression development library"
+
+export ZOPEN_STABLE_URL="https://github.com/google/snappy.git"
+export ZOPEN_STABLE_TAG="${SNAPPY_VERSION}"
+export ZOPEN_STABLE_DEPS="make cmake"
+
+export ZOPEN_DEV_URL="https://github.com/google/snappy.git"
+export ZOPEN_DEV_DEPS="${ZOPEN_STABLE_DEPS}"
+
+# snappy is self-contained C++ and does not need zoslib.
+export ZOPEN_DONT_ADD_ZOSLIB_DEP=1
+export ZOPEN_COMP="CLANG"
+
+export ZOPEN_CONFIGURE="cmake"
+export ZOPEN_CONFIGURE_OPTS="-DCMAKE_BUILD_TYPE=Release -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF -DBUILD_SHARED_LIBS=OFF -B ../build --install-prefix \"\$ZOPEN_INSTALL_DIR/\" ."
+export ZOPEN_MAKE="cmake"
+export ZOPEN_MAKE_OPTS="--build ../build --parallel \$ZOPEN_NUM_JOBS --config Release"
+export ZOPEN_MAKE_MINIMAL=Y
+export ZOPEN_INSTALL="cmake"
+export ZOPEN_INSTALL_OPTS="--install ../build"
+
+# snappy's own tests are the ones disabled above, so the check below is this
+# port's: a round trip through the library, which is the only claim that
+# matters for a compressor.
+export ZOPEN_CHECK="skip"
+
+zopen_post_install() {
+  printHeader "Checking a snappy round trip"
+  _sn_dir="${ZOPEN_INSTALL_DIR}"
+  cat > /tmp/zopen_snappy_check.cc <<'CHECKEOF'
+#include <snappy.h>
+#include <cstdio>
+#include <string>
+int main() {
+    std::string input;
+    for (int i = 0; i < 5000; ++i) input += "the quick brown fox jumps over the lazy dog ";
+    std::string packed, unpacked;
+    size_t n = snappy::Compress(input.data(), input.size(), &packed);
+    if (n == 0 || packed.size() >= input.size()) {
+        std::printf("FAIL: compressed %zu bytes to %zu\n", input.size(), packed.size());
+        return 1;
+    }
+    if (!snappy::IsValidCompressedBuffer(packed.data(), packed.size())) {
+        std::printf("FAIL: compressed buffer does not validate\n");
+        return 1;
+    }
+    if (!snappy::Uncompress(packed.data(), packed.size(), &unpacked)) {
+        std::printf("FAIL: uncompress refused the buffer\n");
+        return 1;
+    }
+    if (unpacked != input) {
+        std::printf("FAIL: round trip changed the data\n");
+        return 1;
+    }
+    std::printf("PASS: %zu bytes -> %zu -> %zu, identical\n",
+                input.size(), packed.size(), unpacked.size());
+    return 0;
+}
+CHECKEOF
+  chtag -tc IBM-1047 /tmp/zopen_snappy_check.cc 2> /dev/null
+  _sn_cxx="${CXX:-clang++}"
+  if ! "${_sn_cxx}" -m64 -std=c++17 -I"${_sn_dir}/include" \
+       /tmp/zopen_snappy_check.cc -L"${_sn_dir}/lib" -lsnappy \
+       -o /tmp/zopen_snappy_check 2>&1; then
+    printSoftError "Could not build the round-trip check against the installed library"
+    return 1
+  fi
+  if ! /tmp/zopen_snappy_check; then
+    printSoftError "snappy did not round-trip"
+    return 1
+  fi
+  rm -f /tmp/zopen_snappy_check /tmp/zopen_snappy_check.cc
+  return 0
+}
+
+zopen_check_results() {
+cat <<ZZ
+actualFailures:0
+totalTests:1
+expectedFailures:0
+expectedTotalTests:1
+ZZ
+}
+
+zopen_append_to_env() {
+cat <<ZZ
+if [ ! -z "\$ZOPEN_IN_ZOPEN_BUILD" ]; then
+  export ZOPEN_EXTRA_CFLAGS="\${ZOPEN_EXTRA_CFLAGS} -I\$PWD/include"
+  export ZOPEN_EXTRA_CXXFLAGS="\${ZOPEN_EXTRA_CXXFLAGS} -I\$PWD/include"
+  export ZOPEN_EXTRA_LDFLAGS="\${ZOPEN_EXTRA_LDFLAGS} -L\$PWD/lib"
+  export ZOPEN_EXTRA_LIBS="\${ZOPEN_EXTRA_LIBS} -lsnappy"
+fi
+ZZ
+}
+
+zopen_get_version() {
+  echo "${SNAPPY_VERSION}"
+}
