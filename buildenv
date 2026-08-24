@@ -102,7 +102,8 @@ int main() {
 }
 CHECKEOF
   chtag -tc IBM-1047 /tmp/zopen_snappy_check.cc 2> /dev/null
-  _sn_cxx="${CXX:-clang++}"
+  # The same compiler the configure used; CXX is not set here (see above).
+  _sn_cxx="${ZOPEN_CLANGXX}"
   if ! "${_sn_cxx}" -m64 -std=c++17 -I"${_sn_dir}/include" \
        /tmp/zopen_snappy_check.cc -L"${_sn_dir}/lib" -lsnappy \
        -o /tmp/zopen_snappy_check 2>&1; then
